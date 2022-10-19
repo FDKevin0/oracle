@@ -3,10 +3,11 @@ package oracle
 import (
 	"database/sql"
 	"fmt"
-	"gorm.io/gorm/utils"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm/utils"
 
 	_ "github.com/godror/godror"
 	"github.com/thoas/go-funk"
@@ -57,7 +58,11 @@ func (d Dialector) Initialize(db *gorm.DB) (err error) {
 	if d.Conn != nil {
 		db.ConnPool = d.Conn
 	} else {
-		db.ConnPool, err = sql.Open(d.DriverName, d.DSN)
+		conn, err := sql.Open(d.DriverName, d.DSN)
+		if err != nil {
+			return err
+		}
+		db.ConnPool = conn
 	}
 
 	if err = db.Callback().Create().Replace("gorm:create", Create); err != nil {
@@ -98,7 +103,7 @@ func (d Dialector) RewriteLimit(c clause.Clause, builder clause.Builder) {
 			builder.WriteString(strconv.Itoa(offset))
 			builder.WriteString(" ROWS")
 		}
-		if limit := limit.Limit; limit > 0 {
+		if limit := *limit.Limit; limit > 0 {
 			builder.WriteString(" FETCH NEXT ")
 			builder.WriteString(strconv.Itoa(limit))
 			builder.WriteString(" ROWS ONLY")
@@ -148,9 +153,7 @@ func (d Dialector) Explain(sql string, vars ...interface{}) string {
 }
 
 func (d Dialector) DataTypeOf(field *schema.Field) string {
-	if _, found := field.TagSettings["RESTRICT"]; found {
-		delete(field.TagSettings, "RESTRICT")
-	}
+	delete(field.TagSettings, "RESTRICT")
 
 	var sqlType string
 
@@ -208,8 +211,8 @@ func (d Dialector) DataTypeOf(field *schema.Field) string {
 			panic(fmt.Sprintf("invalid sql type %s (%s) for oracle", field.FieldType.Name(), field.FieldType.String()))
 		}
 
-		notNull, _ := field.TagSettings["NOT NULL"]
-		unique, _ := field.TagSettings["UNIQUE"]
+		notNull := field.TagSettings["NOT NULL"]
+		unique := field.TagSettings["UNIQUE"]
 		additionalType := fmt.Sprintf("%s %s", notNull, unique)
 		if value, ok := field.TagSettings["DEFAULT"]; ok {
 			additionalType = fmt.Sprintf("%s %s %s%s", "DEFAULT", value, additionalType, func() string {
